@@ -57,8 +57,8 @@ def compute_splits(gross: float) -> dict:
     return {"gross": gross, "cost_fund": cost_fund, "net_80": net}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.id != GROUP_CHAT_ID:
-        return
+    # if update.effective_chat.id != GROUP_CHAT_ID:
+    #     return
 
     msg  = update.message.text
     user = update.effective_user
