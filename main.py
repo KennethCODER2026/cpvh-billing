@@ -47,6 +47,7 @@ def get_sheet(partner: str):
     )
     gc = gspread.authorize(creds)
     tab_name = PARTNER_TABS.get(partner, "Atty. Kenneth Varona")
+    logging.info(f"Opening sheet tab: {tab_name}")
     return gc.open_by_key(SHEET_ID).worksheet(tab_name)
 
 def parse_billing(text: str, sender_name: str) -> dict:
@@ -100,7 +101,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         sheet = get_sheet(partner)
         all_rows = sheet.get_all_values()
+        logging.info(f"Sheet has {len(all_rows)} rows")
         next_num = len([r for r in all_rows if r and r[0].isdigit()]) + 1
+        logging.info(f"Appending row #{next_num}")
         sheet.append_row([
             next_num,
             today,
@@ -113,6 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         sheet_status = "Logged to sheet."
     except Exception as e:
+        logging.error(f"SHEET ERROR: {e}", exc_info=True)
         sheet_status = f"Sheet error: {e}"
 
     reply = (
