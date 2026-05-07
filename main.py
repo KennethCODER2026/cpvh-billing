@@ -14,7 +14,6 @@ GROUP_CHAT_ID  = int(os.environ["GROUP_CHAT_ID"])
 SYSTEM_PROMPT = """
 You are a billing parser for Hourani & Varona Law Office.
 Extract billing info from a partner's casual message and return ONLY valid JSON.
-
 JSON schema:
 {
   "partner": "first name or null if unclear",
@@ -25,7 +24,6 @@ JSON schema:
   "notes": "any extra context",
   "is_billing": true or false
 }
-
 If the message is NOT a billing entry, return {"is_billing": false}.
 Always return raw JSON only, no markdown, no explanation.
 """
@@ -44,7 +42,7 @@ def parse_billing(text: str, sender_name: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
     msg = f"Sender: {sender_name}\nMessage: {text}"
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-4-5",
         max_tokens=500,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": msg}]
@@ -57,8 +55,8 @@ def compute_splits(gross: float) -> dict:
     return {"gross": gross, "cost_fund": cost_fund, "net_80": net}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # if update.effective_chat.id != GROUP_CHAT_ID:
-    #     return
+    logging.info(f"Received message from chat ID: {update.effective_chat.id}")
+    logging.info(f"Message text: {update.message.text}")
 
     msg  = update.message.text
     user = update.effective_user
@@ -66,11 +64,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         data = parse_billing(msg, sender)
+        logging.info(f"Parsed data: {data}")
     except Exception as e:
         logging.error(f"Parse error: {e}")
+        await update.message.reply_text(f"Parse error: {e}")
         return
 
     if not data.get("is_billing"):
+        logging.info("Not a billing message, ignoring.")
         return
 
     hours = data.get("hours") or 0
