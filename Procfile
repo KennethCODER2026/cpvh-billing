@@ -1,1 +1,1 @@
-worker: python billing_bot.py
+worker: python main.py
