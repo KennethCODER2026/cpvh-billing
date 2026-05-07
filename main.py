@@ -11,24 +11,34 @@ ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
 SHEET_ID       = os.environ["GOOGLE_SHEET_ID"]
 GROUP_CHAT_ID  = int(os.environ["GROUP_CHAT_ID"])
 
+PARTNER_TABS = {
+    "kenneth": "Atty. Kenneth Varona",
+    "rea": "Atty. Rea Pintor",
+    "ralph": "Atty. Ralph Catipay",
+}
+
+HOURLY_RATES = {
+    "kenneth": 3000,
+    "rea": 3000,
+    "ralph": 3000,
+}
+
 SYSTEM_PROMPT = """
 You are a billing parser for Hourani & Varona Law Office.
 Extract billing info from a partner's casual message and return ONLY valid JSON.
 JSON schema:
 {
-  "partner": "first name or null if unclear",
-  "client_matter": "client name and/or matter description",
+  "partner": "first name in lowercase (kenneth, rea, or ralph) or null if unclear",
+  "activity": "description of the work done",
   "hours": number or null,
-  "rate_php": number or null,
-  "billing_type": "retainer|appearance|acceptance|notarization|success|other",
-  "notes": "any extra context",
+  "billing_type": "retainer|appearance|acceptance|notarization|consultation|drafting|research|other",
   "is_billing": true or false
 }
 If the message is NOT a billing entry, return {"is_billing": false}.
 Always return raw JSON only, no markdown, no explanation.
 """
 
-def get_sheet():
+def get_sheet(partner: str):
     creds_json = json.loads(os.environ["GOOGLE_CREDS_JSON"])
     creds = Credentials.from_service_account_info(
         creds_json,
@@ -36,7 +46,8 @@ def get_sheet():
                 "https://www.googleapis.com/auth/drive"]
     )
     gc = gspread.authorize(creds)
-    return gc.open_by_key(SHEET_ID).sheet1
+    tab_name = PARTNER_TABS.get(partner, "Atty. Kenneth Varona")
+    return gc.open_by_key(SHEET_ID).worksheet(tab_name)
 
 def parse_billing(text: str, sender_name: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
@@ -79,24 +90,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.info("Not a billing message, ignoring.")
         return
 
+    partner = data.get("partner") or sender
     hours = data.get("hours") or 0
-    rate  = data.get("rate_php") or 3500
+    rate = HOURLY_RATES.get(partner, 3000)
     gross = round(hours * rate, 2)
     splits = compute_splits(gross)
+    today = datetime.now().strftime("%B %d, %Y")
 
     try:
-        sheet = get_sheet()
+        sheet = get_sheet(partner)
+        all_rows = sheet.get_all_values()
+        next_num = len([r for r in all_rows if r and r[0].isdigit()]) + 1
         sheet.append_row([
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            data.get("partner") or sender,
-            data.get("client_matter", ""),
-            data.get("billing_type", ""),
+            next_num,
+            today,
+            data.get("activity", ""),
+            "",
+            "",
             hours,
-            rate,
-            splits["gross"],
-            splits["cost_fund"],
-            splits["net_80"],
-            data.get("notes", "")
+            hours,
+            data.get("billing_type", "")
         ])
         sheet_status = "Logged to sheet."
     except Exception as e:
@@ -104,10 +117,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply = (
         f"Billing entry logged\n"
-        f"Partner: {data.get('partner') or sender}\n"
-        f"Matter: {data.get('client_matter')}\n"
+        f"Partner: {partner.title()}\n"
+        f"Activity: {data.get('activity')}\n"
         f"Hours: {hours}h @ PHP {rate:,.0f}/hr\n"
-        f"Gross: PHP {splits['gross']:,.2f}\n"
+        f"Gross: PHP {gross:,.2f}\n"
         f"20% Cost Fund: PHP {splits['cost_fund']:,.2f}\n"
         f"Net (80%): PHP {splits['net_80']:,.2f}\n"
         f"{sheet_status}"
