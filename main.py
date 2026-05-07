@@ -42,12 +42,17 @@ def parse_billing(text: str, sender_name: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
     msg = f"Sender: {sender_name}\nMessage: {text}"
     response = client.messages.create(
-        model="claude-opus-4-5",
+        model="claude-haiku-4-5-20251001",
         max_tokens=500,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": msg}]
     )
-    return json.loads(response.content[0].text)
+    raw = response.content[0].text.strip()
+    logging.info(f"Claude raw response: {raw}")
+    if not raw:
+        return {"is_billing": False}
+    clean = raw.replace("```json", "").replace("```", "").strip()
+    return json.loads(clean)
 
 def compute_splits(gross: float) -> dict:
     cost_fund = round(gross * 0.20, 2)
