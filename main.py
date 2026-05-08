@@ -11,12 +11,6 @@ ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
 SHEET_ID       = os.environ["GOOGLE_SHEET_ID"]
 GROUP_CHAT_ID  = int(os.environ["GROUP_CHAT_ID"])
 
-PARTNER_TABS = {
-    "kenneth": "Atty. Kenneth Varona",
-    "rea": "Atty. Rea Pintor",
-    "ralph": "Atty. Ralph Catipay",
-}
-
 HOURLY_RATES = {
     "kenneth": 3000,
     "rea": 3000,
@@ -38,7 +32,7 @@ If the message is NOT a billing entry, return {"is_billing": false}.
 Always return raw JSON only, no markdown, no explanation.
 """
 
-def get_sheet(partner: str):
+def get_sheet():
     creds_json = json.loads(os.environ["GOOGLE_CREDS_JSON"])
     creds = Credentials.from_service_account_info(
         creds_json,
@@ -46,9 +40,7 @@ def get_sheet(partner: str):
                 "https://www.googleapis.com/auth/drive"]
     )
     gc = gspread.authorize(creds)
-    tab_name = PARTNER_TABS.get(partner, "Atty. Kenneth Varona")
-    logging.info(f"Opening sheet tab: {tab_name}")
-    return gc.open_by_key(SHEET_ID).worksheet(tab_name)
+    return gc.open_by_key(SHEET_ID).worksheet("Bot Log")
 
 def parse_billing(text: str, sender_name: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
@@ -96,23 +88,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rate = HOURLY_RATES.get(partner, 3000)
     gross = round(hours * rate, 2)
     splits = compute_splits(gross)
-    today = datetime.now().strftime("%B %d, %Y")
 
     try:
-        sheet = get_sheet(partner)
-        all_rows = sheet.get_all_values()
-        logging.info(f"Sheet has {len(all_rows)} rows")
-        next_num = len([r for r in all_rows if r and r[0].isdigit()]) + 1
-        logging.info(f"Appending row #{next_num}")
+        sheet = get_sheet()
         sheet.append_row([
-            next_num,
-            today,
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            partner.title(),
             data.get("activity", ""),
-            "",
-            "",
+            data.get("billing_type", ""),
             hours,
-            hours,
-            data.get("billing_type", "")
+            rate,
+            gross,
+            splits["cost_fund"],
+            splits["net_80"]
         ])
         sheet_status = "Logged to sheet."
     except Exception as e:
