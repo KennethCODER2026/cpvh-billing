@@ -11,18 +11,31 @@ ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
 SHEET_ID       = os.environ["GOOGLE_SHEET_ID"]
 GROUP_CHAT_ID  = int(os.environ["GROUP_CHAT_ID"])
 
+# Maps Telegram first name / username → billing name
+PARTNER_MAP = {
+    "kenneth": "kenneth",
+    "rea": "rea",
+    "rea pintor": "rea",
+    "ralph": "ralph",
+    "ralph catipay": "ralph",
+    "rrsc2594": "ralph",
+    "rami": "rami",
+    "ramihourani": "rami",
+}
+
 HOURLY_RATES = {
     "kenneth": 3000,
     "rea": 3000,
     "ralph": 3000,
+    "rami": 3000,
 }
 
 SYSTEM_PROMPT = """
-You are a billing parser for Hourani & Varona Law Office.
+You are a billing parser for Catipay, Pintor, Varona & Hourani Law Office.
 Extract billing info from a partner's casual message and return ONLY valid JSON.
 JSON schema:
 {
-  "partner": "first name in lowercase (kenneth, rea, or ralph) or null if unclear",
+  "partner": "first name in lowercase (kenneth, rea, ralph, or rami) or null if unclear",
   "activity": "description of the work done",
   "hours": number or null,
   "billing_type": "retainer|appearance|acceptance|notarization|consultation|drafting|research|other",
@@ -63,13 +76,23 @@ def compute_splits(gross: float) -> dict:
     net = round(gross * 0.80, 2)
     return {"gross": gross, "cost_fund": cost_fund, "net_80": net}
 
+def resolve_partner(telegram_name: str, parsed_partner: str) -> str:
+    # First try to resolve from Telegram name
+    tg = telegram_name.lower().strip()
+    if tg in PARTNER_MAP:
+        return PARTNER_MAP[tg]
+    # Fall back to what Claude parsed
+    if parsed_partner and parsed_partner.lower() in HOURLY_RATES:
+        return parsed_partner.lower()
+    return tg
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"Received message from chat ID: {update.effective_chat.id}")
     logging.info(f"Message text: {update.message.text}")
 
     msg  = update.message.text
     user = update.effective_user
-    sender = (user.first_name or user.username or "Unknown").lower()
+    sender = (user.first_name or user.username or "Unknown")
 
     try:
         data = parse_billing(msg, sender)
@@ -83,7 +106,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.info("Not a billing message, ignoring.")
         return
 
-    partner = data.get("partner") or sender
+    partner = resolve_partner(sender, data.get("partner", ""))
     hours = data.get("hours") or 0
     rate = HOURLY_RATES.get(partner, 3000)
     gross = round(hours * rate, 2)
